@@ -1,0 +1,104 @@
+services:
+  openldap:
+    restart: 'unless-stopped'
+    network_mode: "host"
+    image: '${DOCKER_REPO}:openldap-${IMAGE_VERSION}'
+    build:
+      context: ./images/openldap
+      args:
+        DOCKER_REPO: "${DOCKER_REPO}"
+    container_name: openldap
+    hostname: openldap
+    environment:
+      LDAP_DOMAIN: "${DOMAIN}"
+      LDAP_ADMIN_PASSWORD: "${ADMIN_PASSWD}"
+      NAS_UID: "${NAS_UID}"
+      NAS_GID: "${NAS_GID}"
+      NAS_PASSWD: "${NAS_PASSWORD}"
+    volumes:
+      - vol_openldap_config:/etc/ldap/slapd.d/
+      - vol_openldap_data:/var/lib/ldap/
+  samba:
+    restart: 'unless-stopped'
+    network_mode: "host"
+    image: '${DOCKER_REPO}:samba-${IMAGE_VERSION}'
+    build:
+      context: ./images/samba
+      args:
+        DOCKER_REPO: "${DOCKER_REPO}"
+    container_name: samba
+    hostname: samba
+    tty: true
+    environment:
+      LDAP_URI: "$LDAP_URI"
+      LDAP_DOMAIN: "${DOMAIN}"
+      LDAP_ADMIN_PASSWORD: "${ADMIN_PASSWD}"
+    volumes:
+      - vol_samba_config:/etc/samba/conf
+      - vol_samba_data:/var/lib/samba/private
+    depends_on:
+      - openldap
+  authelia:
+    restart: 'unless-stopped'
+    network_mode: "host"
+    image: '${DOCKER_REPO}:authelia-${IMAGE_VERSION}'
+    build:
+      context: ./images/authelia
+      args:
+        DOCKER_REPO: "${DOCKER_REPO}"
+    container_name: authelia
+    hostname: authelia
+    environment:
+      LDAP_URI: "$LDAP_URI"
+      LDAP_DOMAIN: "${DOMAIN}"
+      LDAP_ADMIN_PASSWORD: "${ADMIN_PASSWD}"
+    volumes:
+      - vol_authelia_config:/etc/authelia/config
+      - vol_authelia_data:/var/run/authelia
+      - vol_authelia_secrets:/etc/authelia/secrets
+    depends_on:
+      - openldap
+  jellyfin:
+    restart: 'unless-stopped'
+    network_mode: "host"
+    image: jellyfin/jellyfin:10.11.5
+    container_name: jellyfin
+    hostname: jellyfin
+    volumes:
+      - vol_jellyfin_data:/config
+      - /tmp/jellyfin/cache:/cache
+      - /usr/share/fonts/:/usr/local/share/fonts/:ro
+    environment:
+      JELLYFIN_PublishedServerUrl: "https://media.${DOMAIN}"
+    depends_on:
+      - openldap
+  caddy:
+    restart: 'unless-stopped'
+    network_mode: "host"
+    image: '${DOCKER_REPO}:caddy-${IMAGE_VERSION}'
+    build:
+      context: ./images/caddy
+      args:
+        DOCKER_REPO: "${DOCKER_REPO}"
+    container_name: caddy
+    hostname: caddy
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - 'vol_caddy_data:/root/.local/share/caddy'
+    environment:
+      DOMAIN: "${DOMAIN}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL}"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN}"
+      UPSTREAMS: "jellyfin,media,8096"
+
+volumes:
+  vol_openldap_config:
+  vol_openldap_data:
+  vol_samba_config:
+  vol_samba_data:
+  vol_authelia_config:
+  vol_authelia_data:
+  vol_authelia_secrets:
+  vol_caddy_data:
+  vol_jellyfin_data:
